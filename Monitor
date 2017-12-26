@@ -1,0 +1,177 @@
+/*
+*
+* Monitor
+*
+*/
+
+#include <time.h>
+#include <stdio.h>
+#include "unix.h"
+
+#define clear() printf("\033[H\033[J")
+
+
+//apontadores
+
+FILE *Mconfig; 		//ficheiro de configuração
+FILE *Sconfig;		//ficheiro de configuração do simulador
+FILE *Eventlog;		//eventlog.txt
+
+//variaveis
+char line[30];
+char buffer[50];	//buffer Mconfig
+time_t nw;
+int quit = 0;
+
+//comunicação
+int sockfd, newsockfd, clilen, childpid, servlen;
+struct sockaddr_un cli_addr, serv_addr;
+
+//estruturas
+struct tm *tim;
+
+void load_config()
+{
+	Mconfig = fopen("Mconfig.conf" , "r");
+ 	Sconfig = fopen("Sconfig.conf" , "w");
+
+	if (Mconfig == NULL)
+	{ 
+		Mconfig = fopen("Mconfig.conf" , "w");
+
+		//configuracao predefinida
+		fprintf(Mconfig,"%d\n", 16);	//maximo fila bilheteira
+		fprintf(Mconfig,"%d\n", 8);	    //maximo fila espera carros
+		fprintf(Mconfig,"%d\n", 4);  	//numero de carros
+		fprintf(Mconfig,"%d\n", 10);  	//probabilidade desistencia bilheteira
+		fprintf(Mconfig,"%d\n", 5);  	//probabilidade desistencia carros
+			
+	}
+	
+	time(&nw);
+ 
+	tim = localtime( &nw );
+ 
+	strftime(buffer,50,"%x - %H:%M:%S", tim);
+	fprintf(Eventlog,"Data e hora de acesso : |%s|\n", buffer );
+ 
+	fprintf(Eventlog," Configuracao carregada Monitor: \n");
+ 
+ 	int aux = 0;
+
+		while (fgets(line, 30, Mconfig) != NULL)
+	{	
+		switch (aux)
+		{
+			case 0:
+				fprintf(Eventlog,"Maximo fila bilheteira: %s\n", line);
+				fprintf(Sconfig, "%s\n", line);
+				aux++;
+				break;
+
+			case 1:
+				fprintf(Eventlog,"Maximo fila de espera dos carros: %s\n", line);
+				fprintf(Sconfig, "%s\n", line);
+				aux++;
+				break;
+
+			case 2:
+				fprintf(Eventlog,"Numero de carros: %s\n", line);
+				fprintf(Sconfig, "%s\n", line);
+				aux++;
+				break;
+			
+			case 3:
+				fprintf(Eventlog,"Probabilidade de desistencia fila bilheteira: %s\n", line);
+				fprintf(Sconfig, "%s\n", line);
+				aux++;
+				break;
+
+			case 4:
+				fprintf(Eventlog,"Probabilidade de desistencia fila carros: %s\n", line);
+				fprintf(Sconfig, "%s\n", line);
+				aux++;
+				break;
+
+			default:
+				fprintf(Eventlog, "Erro na impressao\n");
+				break;
+		}
+	}
+
+	fclose(Mconfig);
+ 
+}
+
+void createMenu()
+{
+	clear();
+
+	printf("-------------------------------------------\n");
+	printf("|                    Menu                 |\n");
+	printf("|        1 - Inicio da simulacao          |\n");
+	printf("|        2 - Fim da simulacao             |\n");
+	printf("|        3 - Sair                         |\n");
+	printf("-------------------------------------------\n");
+}
+
+int main()
+{
+ 	/////////////////////////////////////////////////////////////////////
+
+	if ((sockfd= socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+		perror("client: can't open stream socket");
+
+
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sun_family = AF_UNIX;
+	strcpy(serv_addr.sun_path, UNIXSTR_PATH);
+	servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
+
+	unlink(UNIXSTR_PATH);
+
+	if(bind(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
+		perror("cant bind local address");
+
+	listen(sockfd, 1);
+	
+	if((newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen)) < 0)
+		perror("accept error");
+
+	//////////////////////////////////////////////////////////////////////
+
+
+	Eventlog = fopen("eventlog.txt","a+");
+	
+	load_config();
+	createMenu();
+
+	while(quit == 0)
+	{
+		printf("\n\nEscolha a opcao pretendida: ");
+		fgets(buffer, sizeof(buffer),stdin);
+
+		
+		if(strcmp(buffer, "1\n") == 0 || strcmp(buffer, "2\n") == 0)
+		{
+			if (send(newsockfd,buffer, sizeof(buffer), 0) == -1)
+				perror("send");
+		}
+		else if(strcmp(buffer, "3\n") == 0)
+		{
+			if (send(newsockfd,buffer, sizeof(buffer), 0) == -1)
+				perror("send");
+			
+			quit = 1;
+		}
+		else
+		{
+			createMenu();
+		}
+
+	}
+
+	close(newsockfd);
+	close(sockfd);
+ 	return 0;
+}
