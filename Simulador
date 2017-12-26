@@ -1,0 +1,174 @@
+/*
+*
+* Simulador 
+*
+*/
+#include <time.h>
+#include <stdio.h>
+#include "unix.h"
+#include <string.h>
+
+
+#define MAXLINE 512
+#define clear() printf("\033[H\033[J")
+
+//apontadores
+
+FILE *Sconfig; 		//ficheiro de configuração
+FILE *Eventlog;	//eventlog.txt
+
+//variaveis
+char line[30];
+char buffer[50];	//buffer Sconfig
+time_t nw;
+int valor;
+int quit = 0;
+
+//montanha russa
+int filaBil = 0, filaCar = 0, carros = 0;
+
+float probBil = 0, probCar = 0; //probabilidade de desistencia
+
+//comunicacao
+struct sockaddr_un serv_addr;
+int sockfd, servlen;
+int receive;
+
+//estruturas
+struct tm *tim;
+
+void load_config()
+{
+	 Sconfig = fopen("Sconfig.conf" ,"r");
+ 
+	if (Sconfig == NULL)
+	{
+	  Sconfig = fopen("Sconfig.conf" , "w");
+
+		//configuracao predefinida
+		fprintf(Sconfig,"%d\n", 16);	//maximo fila bilheteira
+		fprintf(Sconfig,"%d\n", 8);	    //maximo fila espera carros
+		fprintf(Sconfig,"%d\n", 4);  	//numero de carros
+		fprintf(Sconfig,"%d\n", 10);  	//probabilidade desistencia bilheteira
+		fprintf(Sconfig,"%d\n", 5);  	//probabilidade desistencia carros
+	}
+	
+	int aux = 0;
+
+	while(fscanf(Sconfig, "%d", &valor) != EOF)
+	{
+		switch (aux)
+		{
+			case 0:
+				filaBil = valor;
+				printf("%d\n", filaBil);
+				aux++;
+				break;
+
+			case 1:
+				filaCar = valor;
+				printf("%d\n", filaCar);
+				aux++;
+				break;
+
+			case 2:
+				carros = valor;
+				printf("%d\n", carros);
+				aux++;
+				break;
+			
+			case 3:
+				probBil = valor;
+				printf("%d\n", probBil);
+				aux++;
+				break;
+
+			case 4:
+				probCar = valor;
+				printf("%d\n", probCar);
+				aux++;
+				break;
+
+			default:
+				printf("Erro na atribuicao\n");
+				break;
+		}
+	}
+
+
+
+	time(&nw);
+ 
+	tim = localtime( &nw );
+ 
+	strftime(buffer,50,"%x - %H:%M:%S", tim);
+	fprintf(Eventlog,"Data e hora de acesso : |%s|\n", buffer );
+ 
+	fprintf(Eventlog," Configuracao carregada Simulador: \n");
+ 
+		while (fgets(line, 30, Sconfig) != NULL)
+	{
+		fprintf(Eventlog,line); //guarda config no eventlog
+	}
+ 
+}
+
+int main()
+{
+	///////////////////////////////////////////////////////////////////
+
+	if ((sockfd= socket(AF_UNIX, SOCK_STREAM, 0)) < 0)
+		perror("client: can't open stream socket");
+
+
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+	serv_addr.sun_family = AF_UNIX;
+	strcpy(serv_addr.sun_path, UNIXSTR_PATH);
+	servlen = strlen(serv_addr.sun_path) + sizeof(serv_addr.sun_family);
+
+
+	if (connect(sockfd, (struct sockaddr *) &serv_addr, servlen) < 0)
+		perror("client: can't connect to server");
+
+	///////////////////////////////////////////////////////////////////
+		
+
+	Eventlog = fopen("eventlog.txt","a+");
+	
+	load_config();
+
+
+	while(quit == 0)
+	{
+		if((receive = recv(sockfd, buffer, sizeof(buffer), 0)) > 0)
+		{
+			if(!strcmp(buffer, "1\n"))
+			{
+				clear();
+				printf("simulacao a decorrer\n");
+			}
+			else if(!strcmp(buffer, "2\n"))
+			{
+				clear();
+				printf("fim da simulacao\n");
+			}
+			else if(!strcmp(buffer, "3\n"))
+			{
+				clear();
+				printf("Fechando a simulacao\n");
+				quit = 1;
+			}
+			else
+			{
+				clear();
+				printf("erro na leitura\n");
+			}
+		}
+	}
+
+
+	
+	close(sockfd);
+
+ return 0;
+}
